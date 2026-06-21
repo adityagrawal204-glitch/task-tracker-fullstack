@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task Tracker</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #8b919e;
+    --accent: #5b8cff;
+    --low: #4ade80;
+    --medium: #facc15;
+    --high: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 20px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-bottom: 28px; font-size: 14px; }
+
+  form {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 28px;
+    display: grid;
+    gap: 12px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select, textarea {
+    width: 100%;
+    background: #0f1115;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+  .task {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .task-main { flex: 1; }
+  .task h3 { margin: 0 0 4px; font-size: 16px; }
+  .task p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+  .tags { display: flex; gap: 6px; }
+  .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+  }
+  .tag.LOW { background: rgba(74,222,128,0.15); color: var(--low); }
+  .tag.MEDIUM { background: rgba(250,204,21,0.15); color: var(--medium); }
+  .tag.HIGH { background: rgba(248,113,113,0.15); color: var(--high); }
+  .tag.status { background: rgba(91,140,255,0.15); color: var(--accent); }
+
+  .actions { display: flex; gap: 6px; }
+  .actions button { padding: 6px 10px; font-size: 12px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  #status-msg { font-size: 13px; color: var(--muted); margin-bottom: 12px; min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Task Tracker</h1>
+  <div class="sub">Spring Boot + H2 backend &middot; plain JS frontend</div>
+  <div id="status-msg"></div>
+
+  <form id="task-form">
+    <input type="hidden" id="task-id">
+    <div>
+      <label>Title</label>
+      <input type="text" id="title" required placeholder="e.g. Finish Spring Boot lesson">
+    </div>
+    <div>
+      <label>Description</label>
+      <textarea id="description" placeholder="Optional details"></textarea>
+    </div>
+    <div class="row">
+      <div>
+        <label>Priority</label>
+        <select id="priority">
+          <option value="LOW">Low</option>
+          <option value="MEDIUM" selected>Medium</option>
+          <option value="HIGH">High</option>
+        </select>
+      </div>
+      <div>
+        <label>Status</label>
+        <select id="status">
+          <option value="TODO" selected>To Do</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="DONE">Done</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="submit" id="submit-btn">Add Task</button>
+      <button type="button" class="secondary" id="cancel-edit" style="display:none;">Cancel</button>
+    </div>
+  </form>
+
+  <div id="task-list"></div>
+</div>
+
+<script>
+// Change this if your Spring Boot app runs on a different port.
+const API_URL = "http://localhost:8080/api/tasks";
+
+const form = document.getElementById("task-form");
+const taskList = document.getElementById("task-list");
+const statusMsg = document.getElementById("status-msg");
+const submitBtn = document.getElementById("submit-btn");
+const cancelEditBtn = document.getElementById("cancel-edit");
+
+function showStatus(msg, isError = false) {
+  statusMsg.textContent = msg;
+  statusMsg.style.color = isError ? "#f87171" : "#8b919e";
+}
+
+// --- Fetch and render all tasks ---
+async function loadTasks() {
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error("Failed to load tasks");
+    const tasks = await res.json();
+    renderTasks(tasks);
+    showStatus(`${tasks.length} task(s) loaded.`);
+  } catch (err) {
+    showStatus("Could not reach backend at " + API_URL + ". Is Spring Boot running?", true);
+    taskList.innerHTML = "";
+  }
+}
+
+function renderTasks(tasks) {
+  if (tasks.length === 0) {
+    taskList.innerHTML = '<div class="empty">No tasks yet. Add one above.</div>';
+    return;
+  }
+  taskList.innerHTML = tasks.map(t => `
+    <div class="task">
+      <div class="task-main">
+        <h3>${escapeHtml(t.title)}</h3>
+        ${t.description ? `<p>${escapeHtml(t.description)}</p>` : ""}
+        <div class="tags">
+          <span class="tag ${t.priority}">${t.priority}</span>
+          <span class="tag status">${t.status.replace("_", " ")}</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="secondary" onclick="editTask(${t.id})">Edit</button>
+        <button class="secondary" onclick="deleteTask(${t.id})">Delete</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// --- Create or update on submit ---
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = document.getElementById("task-id").value;
+  const payload = {
+    title: document.getElementById("title").value,
+    description: document.getElementById("description").value,
+    priority: document.getElementById("priority").value,
+    status: document.getElementById("status").value,
+  };
+
+  try {
+    const res = await fetch(id ? `${API_URL}/${id}` : API_URL, {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Save failed");
+    resetForm();
+    loadTasks();
+  } catch (err) {
+    showStatus("Error saving task.", true);
+  }
+});
+
+let allTasksCache = [];
+
+async function editTask(id) {
+  const res = await fetch(`${API_URL}/${id}`);
+  const t = await res.json();
+  document.getElementById("task-id").value = t.id;
+  document.getElementById("title").value = t.title;
+  document.getElementById("description").value = t.description || "";
+  document.getElementById("priority").value = t.priority;
+  document.getElementById("status").value = t.status;
+  submitBtn.textContent = "Save Changes";
+  cancelEditBtn.style.display = "inline-block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function deleteTask(id) {
+  if (!confirm("Delete this task?")) return;
+  try {
+    const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Delete failed");
+    loadTasks();
+  } catch (err) {
+    showStatus("Error deleting task.", true);
+  }
+}
+
+function resetForm() {
+  form.reset();
+  document.getElementById("task-id").value = "";
+  submitBtn.textContent = "Add Task";
+  cancelEditBtn.style.display = "none";
+}
+
+cancelEditBtn.addEventListener("click", resetForm);
+
+// Initial load
+loadTasks();
+</script>
+</body>
+</html>
